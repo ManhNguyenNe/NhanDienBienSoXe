@@ -197,11 +197,25 @@ def process_image(image):
             # Cắt biển số xe từ ảnh gốc
             cropped_plate = image_bgr[y1:y2, x1:x2]
             
-            # Resize để tăng kích thước
-            cropped_plate = cv2.resize(cropped_plate, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            # Thực hiện phối cảnh 4 góc
+            corners = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
+            warped_plate = four_point_transform(image_bgr, corners)
             
-            # Thực hiện OCR và lấy độ tin cậy
-            ocr_results = reader.readtext(cropped_plate, allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-')
+            # Resize để tăng kích thước
+            warped_plate = cv2.resize(warped_plate, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            
+            # Chuyển sang grayscale
+            gray_plate = cv2.cvtColor(warped_plate, cv2.COLOR_BGR2GRAY)
+            
+            # Tăng độ tương phản bằng CLAHE
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            enhanced_plate = clahe.apply(gray_plate)
+            
+            # Chuyển đổi từ BGR sang RGB để hiển thị
+            processed_plate_rgb = cv2.cvtColor(enhanced_plate, cv2.COLOR_GRAY2RGB)
+            
+            # Thực hiện OCR trên ảnh đã xử lý
+            ocr_results = reader.readtext(enhanced_plate, allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-')
             
             # Tính toán độ tin cậy trung bình của OCR
             ocr_confidences = [conf for (_, _, conf) in ocr_results]
@@ -211,17 +225,14 @@ def process_image(image):
             
             # Vẽ box và text lên ảnh gốc với cả hai độ tin cậy
             cv2.rectangle(image_bgr, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            # cv2.putText(image_bgr, 
-            #            f"{plate_text} (Detect: {conf*100:.1f}%, OCR: {avg_ocr_confidence*100:.1f}%)", 
-            #            (x1, y1 - 10),
-            #            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             
             plates.append({
                 'text': plate_text,
                 'box': (x1, y1, x2, y2),
-                'image': cropped_plate,
-                'detect_confidence': conf * 100,  # Độ tin cậy phát hiện biển số
-                'ocr_confidence': avg_ocr_confidence * 100  # Độ tin cậy đọc chữ
+                'image': processed_plate_rgb,  # Ảnh đã xử lý hoàn chỉnh
+                'cropped_image': cv2.cvtColor(cropped_plate, cv2.COLOR_BGR2RGB),  # Ảnh cắt thông thường
+                'detect_confidence': conf * 100,
+                'ocr_confidence': avg_ocr_confidence * 100
             })
     
     # Convert BGR back to RGB for display
@@ -269,18 +280,30 @@ if uploaded_file is not None:
                         st.success(f"✅ Đã phát hiện {len(plates)} biển số xe!")
                         
                         for i, plate in enumerate(plates, 1):
-                            st.markdown(f"""
-                            <div class="result-card">
-                                <h3>Biển số #{i}</h3>
-                                <h2>{plate['text']}</h2>
-                                <p>Độ tin cậy phát hiện: {plate['detect_confidence']:.1f}%</p>
-                                <p>Độ tin cậy đọc chữ: {plate['ocr_confidence']:.1f}%</p>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            # Tạo 3 cột để hiển thị kết quả
+                            plate_col1, plate_col2, plate_col3 = st.columns(3)
+                            
+                            with plate_col1:
+                                st.image(plate['cropped_image'], caption=f'Biển số #{i} (Ảnh cắt thông thường)', use_container_width=True)
+                            
+                            with plate_col2:
+                                st.image(plate['image'], caption=f'Biển số #{i} (Ảnh đã xử lý)', use_container_width=True)
+                            
+                            with plate_col3:
+                                st.markdown(f"""
+                                <div class="result-card">
+                                    <h3>Biển số #{i}</h3>
+                                    <h2 style="font-size: 2em; margin: 10px 0;">{plate['text']}</h2>
+                                    <div style="margin: 15px 0;">
+                                        <p style="font-size: 1.1em;">📊 Độ tin cậy:</p>
+                                        <p>🤖 Model phát hiện: {plate['detect_confidence']:.1f}%</p>
+                                        <p>📝 Model OCR: {plate['ocr_confidence']:.1f}%</p>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
                             
                             if show_details:
-                                # Display cropped plate
-                                st.image(plate['image'], caption=f'Biển số #{i}', use_container_width=True)
+                                st.markdown("---")
                     else:
                         st.warning(f"⚠️ Không phát hiện biển số xe nào với ngưỡng tin cậy {confidence_threshold}%!")
                     
