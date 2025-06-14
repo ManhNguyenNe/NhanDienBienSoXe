@@ -161,8 +161,12 @@ def advanced_image_preprocessing(image):
     else:
         gray = image.copy()
     
-    # 1. Khử nhiễu
-    if enable_denoise:
+    # Tính toán độ tương phản và độ nhiễu của ảnh
+    contrast = np.std(gray)  # Độ tương phản
+    noise = np.mean(np.abs(cv2.Laplacian(gray, cv2.CV_64F)))  # Độ nhiễu
+    
+    # 1. Khử nhiễu chỉ khi độ nhiễu cao
+    if enable_denoise and noise > 80:  # Ngưỡng nhiễu có thể điều chỉnh
         gray = cv2.bilateralFilter(gray, 9, 75, 75)
     
     # 2. Cân bằng histogram adaptive
@@ -170,11 +174,12 @@ def advanced_image_preprocessing(image):
     gray = clahe.apply(gray)
     
     # 3. Morphological operations để làm sạch
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+    gray = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel)
     gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
     
-    # 4. Tăng độ sắc nét
-    if enable_sharpen:
+    # 4. Tăng độ sắc nét chỉ khi độ tương phản thấp
+    if enable_sharpen and contrast < 50:  # Ngưỡng tương phản có thể điều chỉnh
         kernel_sharp = np.array([[-1,-1,-1],
                                [-1, 9,-1],
                                [-1,-1,-1]])
