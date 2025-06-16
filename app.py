@@ -106,7 +106,7 @@ model, reader = load_models()
 with st.sidebar:
     st.markdown("## 🔧 Cấu hình")
     
-    # Confidence threshold
+    # Ngưỡng tin cậy
     confidence_threshold = st.slider(
         "Ngưỡng tin cậy (%)", 
         min_value=50, 
@@ -115,7 +115,7 @@ with st.sidebar:
         help="Ngưỡng tin cậy tối thiểu cho việc nhận diện"
     )
     
-    # OCR confidence threshold
+    # Ngưỡng tin cậy OCR
     ocr_confidence_threshold = st.slider(
         "Ngưỡng tin cậy OCR (%)",
         min_value=30,
@@ -124,19 +124,19 @@ with st.sidebar:
         help="Ngưỡng tin cậy tối thiểu cho kết quả OCR"
     )
     
-    # Image processing options
+    # Tùy chọn xử lý
     st.markdown("### 🔧 Tùy chọn xử lý ảnh")
     enable_denoise = st.checkbox("🧹 Khử nhiễu", value=True)
     enable_sharpen = st.checkbox("🔍 Tăng độ sắc nét", value=True)
     
-    # Show details option
+    # Hiển thị chi tiết
     show_details = st.checkbox("📈 Hiển thị chi tiết kết quả", value=True)
     
-    # About section
+    # Giới thiệu
     st.markdown("### ℹ️ Giới thiệu")
     st.markdown("""
     **Công nghệ sử dụng:**
-    - 🤖 **YOLOv8**: Nhận diện vị trí biển số
+    - 🤖 **YOLOv8n**: Nhận diện vị trí biển số
     - 📝 **EasyOCR**: Đọc ký tự trên biển số
     """)
 
@@ -269,11 +269,7 @@ def perform_multiple_ocr(image):
     # Thử OCR với các cấu hình khác nhau
     ocr_configs = [
         # Cấu hình 1: Standard
-        {'allowlist': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-', 'width_ths': 0.7, 'height_ths': 0.7, 'paragraph': False},
-        # # Cấu hình 2: Relaxed thresholds
-        # {'allowlist': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-', 'width_ths': 0.5, 'height_ths': 0.5},
-        # # Cấu hình 3: Character-based
-        # {'allowlist': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-', 'width_ths': 0.3, 'height_ths': 0.3, 'paragraph': False},
+        {'allowlist': '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-', 'width_ths': 0.5, 'height_ths': 0.6, 'paragraph': False},
     ]
     
     for img_name, img in images_to_try:
@@ -304,12 +300,12 @@ def perform_multiple_ocr(image):
     if not results:
         return "", 0, "No result"
     
-    # Sắp xếp kết quả theo confidence và độ dài hợp lý (6-10 ký tự cho biển số VN)
+    # Sắp xếp kết quả theo confidence và độ dài hợp lý
     def score_result(result):
         base_score = result['confidence']
         length = result['length']
         
-        # Bonus cho độ dài hợp lý của biển số Việt Nam
+        # Bonus cho độ dài hợp lý của biển số 
         if 6 <= length <= 10:
             base_score += 0.1
         elif 5 <= length <= 11:
@@ -326,17 +322,17 @@ def perform_multiple_ocr(image):
 
 def process_image(image):
     """Process image and return results"""
-    # Convert PIL Image to numpy array
+    # Chuyển PIL về mảng numpy (yolo và open cv cần mảng numpy để xử lý)
     image_np = np.array(image)
-    # Convert RGB to BGR (OpenCV format)
+    # Chuyển RGB về BGR (Format của OpenCV)
     image_bgr = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
     
-    # Detect license plates
-    results = model(image_bgr)
+    # Nhận diện vị trí
+    results = model(image_bgr, conf=0.287)
     boxes = results[0].boxes.xyxy.cpu().numpy()
     confidences = results[0].boxes.conf.cpu().numpy()
     
-    # Process each detected plate
+    # Xử lý từng biển (nếu có nhiều)
     plates = []
     for box, conf in zip(boxes, confidences):
         if conf * 100 >= confidence_threshold:
@@ -355,7 +351,7 @@ def process_image(image):
             corners = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.float32)
             warped_plate = four_point_transform(image_bgr, corners)
             
-            # Thực hiện OCR với nhiều phương pháp
+            # Thực hiện OCR với nhiều phương pháp (đã bỏ)
             plate_text, ocr_confidence, ocr_method = perform_multiple_ocr(warped_plate)
             
             # Vẽ box và text lên ảnh gốc
@@ -375,7 +371,7 @@ def process_image(image):
                 'ocr_method': ocr_method
             })
     
-    # Convert BGR back to RGB for display
+    # Chuyển BGR về lại RGB để hiển thị
     result_image = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     return result_image, plates
 
@@ -395,21 +391,21 @@ if uploaded_file is not None:
     image = Image.open(uploaded_file)
     st.image(image, caption='Ảnh đã tải lên', use_container_width=True)
     
-    # Image info
+    # Info
     width, height = image.size
     st.info(f"📐 Kích thước: {width} x {height} pixels")
 
     if st.button("🚀 Bắt đầu phân tích", type="primary", use_container_width=True):
         with st.spinner('🤖 AI đang phân tích...'):
             try:
-                # Process image
+                # Xử lý ảnh
                 result_image, plates = process_image(image)
                 
-                # Display result image
+                # Hiển thị kết quả
                 st.markdown("### 🔍 Kết quả nhận diện")
                 st.image(result_image, caption='Kết quả nhận diện', use_container_width=True)
                 
-                # Display detected plates
+                # Hiển thị từng biển số
                 if plates:
                     st.markdown("### 📊 Kết quả phân tích")
                     st.success(f"✅ Đã phát hiện {len(plates)} biển số xe!")
@@ -479,7 +475,7 @@ with col3:
 with col4:
     st.metric("🔧 Phương pháp OCR", "Multi-method")
 
-# Add footer
+# Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; padding: 2rem;'>
